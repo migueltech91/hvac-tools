@@ -146,9 +146,10 @@
             <label>Valor<input name="valor" type="number" min="0.1" step="0.1" value="5"></label>
           </div>
           <div class="fila">
-            <label>Relación ancho/alto<input name="relacion" type="number" min="1" step="0.5" value="1.5"></label>
-            <label><span>Alto fijo (<span class="u-medida">cm</span>, opcional)</span><input name="alto_fijo" type="number" min="1" step="any" placeholder="—"></label>
+            <label><span>Ancho (<span class="u-medida">cm</span>)</span><input name="dim_ancho" type="number" min="1" step="any" placeholder="Calcular"></label>
+            <label><span>Alto (<span class="u-medida">cm</span>)</span><input name="dim_alto" type="number" min="1" step="any" placeholder="Calcular"></label>
           </div>
+          <p class="ayuda">Completa una medida y se calcula la otra (por ejemplo, el alto que permite el cielo raso). Con las dos, se verifica ese ducto. Vacías: proporción 1,5:1.</p>
         </div>
 
         <div data-solo-modo="verificar" hidden>

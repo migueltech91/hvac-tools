@@ -153,8 +153,11 @@ const render = {
       const veredicto = velAlta || velBaja
         ? ""
         : `<p class="mensaje-ok">Ducto adecuado: velocidad dentro del rango recomendado.</p>`;
+      const nota = d.desde_dimensionar
+        ? `<p class="ayuda">Indicaste ancho y alto, así que se verifica ese ducto en lugar de dimensionarlo.</p>`
+        : "";
       return `
-        <h2>Verificación del ducto ${escapar(medida)}</h2>
+        <h2>Verificación del ducto ${escapar(medida)}</h2>${nota}
         <div class="kpis">
           <div class="kpi${estadoVel}">
             <div class="titulo">Velocidad del aire</div>
@@ -173,18 +176,20 @@ const render = {
     }
 
     const [ancho, alto] = d.rectangular_comercial;
+    const fijo = d.lado_fijo ? ` (${d.lado_fijo} indicado)` : "";
     return `
       <h2>Resultado</h2>
       <div class="kpis">
         ${kpi("Ducto circular", "Ø " + med(d.diametro_comercial), " " + u, true)}
-        ${kpi("Ducto rectangular", `${med(ancho)} × ${med(alto)}`, " " + u, true)}
-        ${kpi("Velocidad", fmt(d.velocidad_ms, 2), " m/s")}
+        ${kpi("Ducto rectangular" + fijo, `${med(ancho)} × ${med(alto)}`, " " + u, true)}
+        ${kpi("Velocidad de diseño", fmt(d.velocidad_ms, 2), " m/s")}
         ${kpi("Fricción", fmt(d.friccion_pa_m, 3), " Pa/m")}
       </div>
       <table class="tabla"><tbody>
         ${caudal}
         <tr><td>Diámetro calculado</td><td class="num">${fmt(d.diametro, dec)} ${u}</td></tr>
         <tr><td>Rectangular calculado</td><td class="num">${fmt(d.ancho, dec)} × ${fmt(d.alto, dec)} ${u}</td></tr>
+        <tr><td>Velocidad en el rectangular</td><td class="num">${fmt(d.velocidad_rectangular_ms, 2)} m/s</td></tr>
       </tbody></table>
       ${lista || `<p class="mensaje-ok">Velocidad dentro del rango recomendado.</p>`}`;
   },
@@ -283,7 +288,7 @@ function prepararPestanas() {
 // Ductos: muestra los campos del modo / forma elegidos y convierte cm <-> mm.
 function prepararDuctos() {
   const form = document.querySelector('[data-herramienta="ductos"]');
-  const medidas = ["alto_fijo", "ancho", "alto", "diametro"];
+  const medidas = ["dim_ancho", "dim_alto", "ancho", "alto", "diametro"];
   let unidadAnterior = form.elements.unidad_medida.value;
   const sincronizar = () => {
     const modo = form.querySelector('input[name="modo"]:checked').value;

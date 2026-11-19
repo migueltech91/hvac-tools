@@ -88,7 +88,7 @@ python ductos/ductos.py --caudal 1000 --velocidad 5
 Caudal               1,000 m³/h (589 CFM)
 Diámetro calculado   26.6 cm  -> comercial 30 cm
 Rectangular          29.9 x 20 cm  -> comercial 30 x 20 cm
-Velocidad            5.00 m/s
+Velocidad            5.00 m/s (circular) · 4.65 m/s (rectangular)
 Pérdida por fricción 1.132 Pa/m
 ```
 
@@ -102,17 +102,34 @@ python ductos/ductos.py --caudal 600 --unidad CFM --friccion 0.8 --relacion 2
 Caudal               1,019 m³/h (600 CFM)
 Diámetro calculado   28.8 cm  -> comercial 30 cm
 Rectangular          37.7 x 18.9 cm  -> comercial 40 x 20 cm
-Velocidad            4.36 m/s
+Velocidad            4.36 m/s (circular) · 3.97 m/s (rectangular)
 Pérdida por fricción 0.800 Pa/m
 AVISO: Velocidad 4.4 m/s menor que la recomendada (5 m/s) para tramo principal: ducto sobredimensionado.
 ```
 
-Con alto fijo (por ejemplo, un cielo raso que solo deja 15 cm):
+Con una medida fija, se calcula la otra. Por ejemplo, un cielo raso que solo
+deja 15 cm de alto (`--alto`) o un ancho disponible de 60 cm (`--ancho`):
 
 ```bash
 python ductos/ductos.py --caudal 1000 --velocidad 5 --alto 15
 # Rectangular  42.1 x 15 cm  -> comercial 45 x 15 cm
+
+python ductos/ductos.py --caudal 3000 --velocidad 5 --ancho 60
+# Rectangular  60 x 30.4 cm  -> comercial 60 x 35 cm
 ```
+
+La medida que indicas se respeta tal cual y solo se redondea la calculada. Si
+el resultado queda demasiado plano (proporción mayor que 4:1), el programa
+avisa:
+
+```bash
+python ductos/ductos.py --caudal 3000 --velocidad 5 --alto 2
+# Rectangular  4268.2 x 2 cm  -> comercial 4270 x 2 cm
+# AVISO: Proporción 2134.1:1 mayor que 4:1: ducto demasiado plano, ...
+```
+
+Para revisar un ducto con **ancho y alto** ya definidos, usa la verificación
+(`--medida ANCHO ALTO`). En la demo web basta con completar ambos campos.
 
 ## Opciones
 
@@ -125,8 +142,9 @@ python ductos/ductos.py --caudal 1000 --velocidad 5 --alto 15
 | `--friccion` | Dimensionar con esta pérdida por fricción en Pa/m | — |
 | `--medida ANCHO ALTO` | Verificar un ducto rectangular existente | — |
 | `--diametro` | Verificar un ducto circular existente | — |
-| `--relacion` | Relación ancho/alto al dimensionar | 1.5 |
-| `--alto` | Alto fijo al dimensionar (alternativa a `--relacion`) | — |
+| `--alto` | Alto fijo al dimensionar: calcula el ancho | — |
+| `--ancho` | Ancho fijo al dimensionar: calcula el alto | — |
+| `--relacion` | Relación ancho/alto si no se fija ninguna medida | 1.5 |
 | `--tipo` | `residencial`, `principal`, `ramal`, `retorno` | `principal` |
 
 Se usa una sola de `--velocidad`, `--friccion`, `--medida` o `--diametro`.
@@ -134,7 +152,12 @@ Se usa una sola de `--velocidad`, `--friccion`, `--medida` o `--diametro`.
 Velocidades recomendadas para bajo ruido (m/s): residencial 2,5–5 ·
 principal 5–8 · ramal 3–5 · retorno 2,5–5. Por encima del máximo, el ducto
 genera ruido en difusores y rejillas; por debajo del mínimo, está
-sobredimensionado (más material y espacio del necesario).
+sobredimensionado (más material y espacio del necesario). También se avisa si
+la proporción del ducto rectangular supera 4:1.
+
+Al dimensionar se informan dos velocidades: la del ducto circular de diseño y
+la real del rectangular equivalente (caudal / área), que suele ser algo menor
+porque, a igual fricción, el rectangular tiene más área.
 
 ## Como librería
 

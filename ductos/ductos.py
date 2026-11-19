@@ -34,6 +34,7 @@ RUGOSIDAD_GALVANIZADO = 0.00009  # m (ASHRAE, acero galvanizado)
 CFM_A_M3H = 1.6990108
 PASO_COMERCIAL_MM = 50
 FRICCION_MAXIMA_PA_M = 2.0
+RELACION_ASPECTO_MAXIMA = 4.0  # práctica habitual (SMACNA): lado mayor <= 4 x lado menor
 
 # Unidades de longitud aceptadas para las medidas del ducto (metros por unidad).
 UNIDADES_MEDIDA = {"cm": 0.01, "mm": 0.001}
@@ -158,10 +159,11 @@ def formatear_medida(medida_m: float, unidad: str = "cm", decimales: int = 1) ->
 class ResultadoDucto:
     caudal_m3h: float
     diametro_m: float
-    velocidad_ms: float
+    velocidad_ms: float  # velocidad en el ducto circular de diseño
     friccion_pa_m: float
     ancho_m: float
     alto_m: float
+    lado_fijo: str | None = None  # "ancho" o "alto" si lo indicó el usuario
 
     @property
     def diametro_comercial_mm(self) -> int:
@@ -169,7 +171,15 @@ class ResultadoDucto:
 
     @property
     def rectangular_comercial_mm(self) -> tuple[int, int]:
-        return redondear_comercial(self.ancho_m), redondear_comercial(self.alto_m)
+        """Medidas comerciales; el lado indicado por el usuario se respeta tal cual."""
+        ancho = round(self.ancho_m * 1000) if self.lado_fijo == "ancho" else redondear_comercial(self.ancho_m)
+        alto = round(self.alto_m * 1000) if self.lado_fijo == "alto" else redondear_comercial(self.alto_m)
+        return ancho, alto
+
+    @property
+    def velocidad_rectangular_ms(self) -> float:
+        """Velocidad real en el ducto rectangular calculado (caudal / área)."""
+        return self.caudal_m3h / 3600 / (self.ancho_m * self.alto_m)
 
 
 def dimensionar(
@@ -178,17 +188,30 @@ def dimensionar(
     friccion: float | None = None,
     relacion: float = 1.5,
     alto_m: float | None = None,
+    ancho_m: float | None = None,
 ) -> ResultadoDucto:
-    """Dimensiona un ducto por velocidad o por fricción (indicar solo uno)."""
+    """Dimensiona un ducto por velocidad o por fricción (indicar solo uno).
+
+    El ducto rectangular se obtiene con la relación ancho/alto, o bien
+    fijando el ancho o el alto (por ejemplo, por el espacio del cielo raso) y
+    calculando el otro lado. Para revisar un ducto con ambas medidas use
+    :func:`verificar`.
+    """
     if (velocidad is None) == (friccion is None):
         raise ValueError("Indique la velocidad o la fricción (solo una)")
+    if alto_m is not None and ancho_m is not None:
+        raise ValueError("Con ancho y alto definidos, use la verificación del ducto")
     q = caudal_m3h / 3600
     if velocidad is not None:
         diametro = diametro_por_velocidad(q, velocidad)
     else:
         diametro = diametro_por_friccion(q, friccion)
+    lado_fijo = None
     if alto_m is not None:
-        ancho, alto = rectangular_por_alto(diametro, alto_m), alto_m
+        ancho, alto, lado_fijo = rectangular_por_alto(diametro, alto_m), alto_m, "alto"
+    elif ancho_m is not None:
+        # Huebscher es simétrica: el mismo cálculo sirve fijando el ancho.
+        ancho, alto, lado_fijo = ancho_m, rectangular_por_alto(diametro, ancho_m), "ancho"
     else:
         ancho, alto = rectangular_por_relacion(diametro, relacion)
     return ResultadoDucto(
@@ -198,6 +221,7 @@ def dimensionar(
         friccion_pa_m=perdida_por_friccion(q, diametro),
         ancho_m=ancho,
         alto_m=alto,
+        lado_fijo=lado_fijo,
     )
 
 
@@ -310,7 +334,22 @@ def advertencias(resultado: ResultadoDucto | VerificacionDucto, tipo: str = "pri
             f"Pérdida por fricción alta ({resultado.friccion_pa_m:.1f} Pa/m > "
             f"{FRICCION_MAXIMA_PA_M:g} Pa/m): el ventilador necesitará más presión."
         )
+    proporcion = relacion_aspecto(resultado)
+    if proporcion is not None and proporcion > RELACION_ASPECTO_MAXIMA:
+        avisos.append(
+            f"Proporción {proporcion:.1f}:1 mayor que {RELACION_ASPECTO_MAXIMA:g}:1: "
+            "ducto demasiado plano, con más fricción, ruido y material. "
+            "Use medidas más cercanas a un cuadrado."
+        )
     return avisos
+
+
+def relacion_aspecto(resultado: ResultadoDucto | VerificacionDucto) -> float | None:
+    """Lado mayor / lado menor de un ducto rectangular (None si es circular)."""
+    ancho, alto = getattr(resultado, "ancho_m", None), getattr(resultado, "alto_m", None)
+    if not ancho or not alto:
+        return None
+    return max(ancho, alto) / min(ancho, alto)
 
 
 def _caudal_txt(caudal_m3h: float) -> str:
@@ -326,7 +365,8 @@ def informe(r: ResultadoDucto, tipo: str = "principal", unidad: str = "cm") -> s
         f"  -> comercial {m(r.diametro_comercial_mm / 1000)} {unidad}",
         f"Rectangular          {m(r.ancho_m)} x {m(r.alto_m)} {unidad}"
         f"  -> comercial {m(ancho_c / 1000)} x {m(alto_c / 1000)} {unidad}",
-        f"Velocidad            {r.velocidad_ms:.2f} m/s",
+        f"Velocidad            {r.velocidad_ms:.2f} m/s (circular)"
+        f" · {r.velocidad_rectangular_ms:.2f} m/s (rectangular)",
         f"Pérdida por fricción {r.friccion_pa_m:.3f} Pa/m",
     ]
     lineas += [f"AVISO: {a}" for a in advertencias(r, tipo)]
@@ -377,7 +417,8 @@ def main(argv: list[str] | None = None) -> int:
     modo.add_argument("--diametro", type=float, help="verificar un ducto circular existente")
     forma = parser.add_mutually_exclusive_group()
     forma.add_argument("--relacion", type=float, default=1.5, help="relación ancho/alto")
-    forma.add_argument("--alto", type=float, help="alto fijo del ducto rectangular")
+    forma.add_argument("--alto", type=float, help="alto fijo del ducto rectangular (calcula el ancho)")
+    forma.add_argument("--ancho", type=float, help="ancho fijo del ducto rectangular (calcula el alto)")
     parser.add_argument("--tipo", choices=VELOCIDADES_RECOMENDADAS, default="principal")
     args = parser.parse_args(argv)
 
@@ -398,6 +439,7 @@ def main(argv: list[str] | None = None) -> int:
                 friccion=args.friccion,
                 relacion=args.relacion,
                 alto_m=a_metros(args.alto, unidad) if args.alto else None,
+                ancho_m=a_metros(args.ancho, unidad) if args.ancho else None,
             )
             print(informe(resultado, args.tipo, unidad))
     except ValueError as error:

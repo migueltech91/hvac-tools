@@ -13,6 +13,7 @@ from ductos.ductos import (
     rectangular_por_alto,
     rectangular_por_relacion,
     redondear_comercial,
+    relacion_aspecto,
     tamano_recomendado,
     verificar,
 )
@@ -124,6 +125,41 @@ class TestDuctos(unittest.TestCase):
         self.assertEqual(formatear_medida(0.266, "cm"), "26.6")
         self.assertEqual(formatear_medida(0.30, "cm"), "30")
         self.assertEqual(formatear_medida(0.266, "mm"), "266")
+
+    def test_ancho_fijo_calcula_alto(self):
+        r = dimensionar(3000, velocidad=5, ancho_m=0.60)
+        self.assertEqual(r.lado_fijo, "ancho")
+        self.assertAlmostEqual(r.ancho_m, 0.60)
+        self.assertAlmostEqual(diametro_equivalente(r.ancho_m, r.alto_m), r.diametro_m, places=6)
+        # El lado indicado se respeta; el calculado se redondea hacia arriba.
+        ancho_c, alto_c = r.rectangular_comercial_mm
+        self.assertEqual(ancho_c, 600)
+        self.assertEqual(alto_c % 50, 0)
+
+    def test_lado_fijo_no_se_redondea(self):
+        r = dimensionar(1000, velocidad=5, alto_m=0.22)
+        self.assertEqual(r.rectangular_comercial_mm[1], 220)
+
+    def test_alto_absurdo_avisa_proporcion(self):
+        # Caso de revisión técnica: 3000 m³/h con alto fijo de 2 cm daba
+        # 4270 x 5 cm sin ningún aviso.
+        r = dimensionar(3000, velocidad=5, alto_m=0.02)
+        self.assertEqual(r.rectangular_comercial_mm[1], 20)  # respeta los 2 cm
+        self.assertGreater(relacion_aspecto(r), 1000)
+        self.assertTrue(any("demasiado plano" in a for a in advertencias(r)))
+        self.assertLess(r.velocidad_rectangular_ms, r.velocidad_ms)
+
+    def test_proporcion_normal_sin_aviso(self):
+        r = dimensionar(1000, velocidad=6, relacion=2)
+        self.assertAlmostEqual(relacion_aspecto(r), 2)
+        self.assertFalse(any("plano" in a for a in advertencias(r)))
+        v = verificar(1000, ancho_m=0.90, alto_m=0.20)
+        self.assertTrue(any("plano" in a for a in advertencias(v)))  # 4,5:1
+        self.assertIsNone(relacion_aspecto(verificar(500, diametro_m=0.2)))
+
+    def test_ancho_y_alto_juntos_es_verificacion(self):
+        with self.assertRaises(ValueError):
+            dimensionar(1000, velocidad=5, ancho_m=0.3, alto_m=0.2)
 
     def test_area_coherente(self):
         r = dimensionar(3600, velocidad=4)

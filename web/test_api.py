@@ -37,8 +37,18 @@ class TestApiWeb(unittest.TestCase):
         self.assertAlmostEqual(r["diametro_comercial"], 30)  # cm por defecto
         mm = llamar("ductos", caudal=1000, metodo="velocidad", valor=5, unidad_medida="mm")
         self.assertAlmostEqual(mm["datos"]["diametro_comercial"], 300)
-        alto = llamar("ductos", caudal=1000, metodo="velocidad", valor=5, alto_fijo=15)
+        alto = llamar("ductos", caudal=1000, metodo="velocidad", valor=5, dim_alto=15)
         self.assertEqual(alto["datos"]["rectangular_comercial"], [45, 15])
+        ancho = llamar("ductos", caudal=3000, metodo="velocidad", valor=5, dim_ancho=60)["datos"]
+        self.assertEqual(ancho["lado_fijo"], "ancho")
+        self.assertAlmostEqual(ancho["rectangular_comercial"][0], 60)
+        plano = llamar("ductos", caudal=3000, metodo="velocidad", valor=5, dim_alto=2)["datos"]
+        self.assertTrue(any("plano" in a for a in plano["avisos"]))
+        # Con ancho y alto, el modo dimensionar verifica ese ducto.
+        ambos = llamar("ductos", caudal=3000, metodo="velocidad", valor=5, dim_ancho=20, dim_alto=30)
+        self.assertEqual(ambos["datos"]["modo"], "verificar")
+        self.assertTrue(ambos["datos"]["desde_dimensionar"])
+        self.assertAlmostEqual(ambos["datos"]["sugerido"]["ancho"], 35)
         cfm = llamar("ductos", caudal=600, unidad="CFM", metodo="friccion", valor=0.8, relacion=2)
         self.assertAlmostEqual(cfm["datos"]["friccion_pa_m"], 0.8, places=3)
 

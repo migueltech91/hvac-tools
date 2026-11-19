@@ -108,7 +108,14 @@ def ductos(**p) -> dict:
         "rango_velocidad": list(VELOCIDADES_RECOMENDADAS[tipo]),
     }
 
-    if p.get("modo", "dimensionar") == "verificar":
+    modo = p.get("modo", "dimensionar")
+    dim_ancho, dim_alto = p.get("dim_ancho"), p.get("dim_alto")
+    if modo == "dimensionar" and dim_ancho and dim_alto:
+        # Con ambas medidas no hay nada que dimensionar: se verifica ese ducto.
+        modo, p = "verificar", {**p, "forma": "rectangular", "ancho": dim_ancho, "alto": dim_alto}
+        base["desde_dimensionar"] = True
+
+    if modo == "verificar":
         if p.get("forma", "rectangular") == "rectangular":
             v = verificar(
                 caudal,
@@ -139,13 +146,12 @@ def ductos(**p) -> dict:
         }
 
     valor = float(p["valor"])
-    alto_fijo = p.get("alto_fijo")
     r = dimensionar(
         caudal,
         velocidad=valor if p.get("metodo", "velocidad") == "velocidad" else None,
         friccion=valor if p.get("metodo") == "friccion" else None,
-        relacion=float(p.get("relacion", 1.5) or 1.5),
-        alto_m=a_metros(float(alto_fijo), unidad) if alto_fijo else None,
+        alto_m=a_metros(float(dim_alto), unidad) if dim_alto else None,
+        ancho_m=a_metros(float(dim_ancho), unidad) if dim_ancho else None,
     )
     ancho_c, alto_c = r.rectangular_comercial_mm
     return {
@@ -156,7 +162,9 @@ def ductos(**p) -> dict:
         "ancho": en_unidad(r.ancho_m),
         "alto": en_unidad(r.alto_m),
         "rectangular_comercial": [en_unidad(ancho_c / 1000), en_unidad(alto_c / 1000)],
+        "lado_fijo": r.lado_fijo,
         "velocidad_ms": r.velocidad_ms,
+        "velocidad_rectangular_ms": r.velocidad_rectangular_ms,
         "friccion_pa_m": r.friccion_pa_m,
         "avisos": advertencias(r, tipo),
     }

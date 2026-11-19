@@ -36,7 +36,7 @@ uso y salida real del programa.
 - **Sin dependencias externas**: solo la biblioteca estándar de Python.
 - **Fórmulas de referencia**: ASHRAE Fundamentals (psicrometría, fricción en
   ductos, diámetro equivalente de Huebscher) y factores prácticos del rubro.
-- **Probado**: 56 tests automáticos que corren en cada cambio
+- **Probado**: 61 tests automáticos que corren en cada cambio
   (GitHub Actions, Windows y Linux).
 - **Demo web**: interfaz en HTML/CSS/JS que llama al mismo código Python
   desde el navegador ([`web/`](web/), publicada con GitHub Pages).
