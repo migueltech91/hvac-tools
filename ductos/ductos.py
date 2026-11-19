@@ -1,19 +1,24 @@
-"""Dimensionamiento de ductos de aire.
+"""Dimensionamiento y verificación de ductos de aire.
 
-Calcula el tamaño de un ducto (circular y rectangular equivalente) para un
-caudal dado, por dos métodos:
+Dos modos de trabajo:
 
-* Velocidad: se fija la velocidad del aire (m/s).
-* Pérdida de carga constante (fricción igual): se fija la pérdida por
-  fricción por metro de ducto (Pa/m).
+1. Dimensionar: calcula el tamaño de un ducto (circular y rectangular
+   equivalente) para un caudal dado, por velocidad (m/s) o por pérdida de
+   carga constante (Pa/m).
+2. Verificar: revisa un ducto existente o propuesto (medidas en cm o mm) y
+   calcula la velocidad real del aire y la pérdida por fricción. Si la
+   velocidad es demasiado alta, avisa del ruido en difusores y rejillas y
+   sugiere el tamaño mínimo recomendado.
 
 La fricción se calcula con Darcy-Weisbach y la ecuación de Colebrook, y la
 equivalencia rectangular con la fórmula de Huebscher (ASHRAE).
 
-Uso desde la terminal:
+Uso desde la terminal (medidas en cm por defecto):
     python ductos/ductos.py --caudal 1000 --velocidad 5
     python ductos/ductos.py --caudal 600 --unidad CFM --friccion 0.8 --relacion 2
-    python ductos/ductos.py --caudal 1000 --velocidad 5 --alto 200
+    python ductos/ductos.py --caudal 1000 --velocidad 5 --alto 20
+    python ductos/ductos.py --caudal 3000 --medida 20 30
+    python ductos/ductos.py --caudal 800 --diametro 25 --tipo ramal
 """
 
 from __future__ import annotations
@@ -28,6 +33,10 @@ VISCOSIDAD_AIRE = 1.81e-5  # Pa·s
 RUGOSIDAD_GALVANIZADO = 0.00009  # m (ASHRAE, acero galvanizado)
 CFM_A_M3H = 1.6990108
 PASO_COMERCIAL_MM = 50
+FRICCION_MAXIMA_PA_M = 2.0
+
+# Unidades de longitud aceptadas para las medidas del ducto (metros por unidad).
+UNIDADES_MEDIDA = {"cm": 0.01, "mm": 0.001}
 
 # Rangos de velocidad recomendados (m/s), orientativos para bajo ruido.
 VELOCIDADES_RECOMENDADAS = {
@@ -125,6 +134,26 @@ def redondear_comercial(medida_m: float, paso_mm: int = PASO_COMERCIAL_MM) -> in
     return int(math.ceil(round(medida_m * 1000, 6) / paso_mm) * paso_mm)
 
 
+def a_metros(valor: float, unidad: str = "cm") -> float:
+    """Convierte una medida en cm o mm a metros."""
+    if unidad not in UNIDADES_MEDIDA:
+        raise ValueError(f"Unidad de medida inválida: {unidad!r}. Opciones: cm, mm")
+    return valor * UNIDADES_MEDIDA[unidad]
+
+
+def formatear_medida(medida_m: float, unidad: str = "cm", decimales: int = 1) -> str:
+    """Texto de una medida en cm o mm (los mm siempre sin decimales)."""
+    valor = medida_m / UNIDADES_MEDIDA[unidad]
+    if unidad == "mm":
+        decimales = 0
+    return f"{valor:.{decimales}f}".rstrip("0").rstrip(".") if decimales else f"{valor:.0f}"
+
+
+# --------------------------------------------------------------------------
+# Modo dimensionar
+# --------------------------------------------------------------------------
+
+
 @dataclass
 class ResultadoDucto:
     caudal_m3h: float
@@ -172,33 +201,131 @@ def dimensionar(
     )
 
 
-def advertencias(resultado: ResultadoDucto, tipo: str = "principal") -> list[str]:
+# --------------------------------------------------------------------------
+# Modo verificar
+# --------------------------------------------------------------------------
+
+
+@dataclass
+class VerificacionDucto:
+    caudal_m3h: float
+    forma: str  # "rectangular" o "circular"
+    ancho_m: float | None
+    alto_m: float | None
+    diametro_m: float  # real (circular) o equivalente (rectangular)
+    area_m2: float
+    velocidad_ms: float  # velocidad real: caudal / área
+    friccion_pa_m: float
+
+
+def verificar(
+    caudal_m3h: float,
+    ancho_m: float | None = None,
+    alto_m: float | None = None,
+    diametro_m: float | None = None,
+) -> VerificacionDucto:
+    """Velocidad y fricción de un ducto existente (rectangular o circular)."""
+    if caudal_m3h <= 0:
+        raise ValueError("El caudal debe ser positivo")
+    rectangular = ancho_m is not None or alto_m is not None
+    if rectangular == (diametro_m is not None):
+        raise ValueError("Indique ancho y alto (rectangular) o el diámetro (circular)")
+    q = caudal_m3h / 3600
+    if rectangular:
+        if not ancho_m or not alto_m or ancho_m <= 0 or alto_m <= 0:
+            raise ValueError("El ancho y el alto deben ser positivos")
+        area = ancho_m * alto_m
+        diametro = diametro_equivalente(ancho_m, alto_m)
+    else:
+        if diametro_m <= 0:
+            raise ValueError("El diámetro debe ser positivo")
+        area = math.pi * diametro_m**2 / 4
+        diametro = diametro_m
+    return VerificacionDucto(
+        caudal_m3h=caudal_m3h,
+        forma="rectangular" if rectangular else "circular",
+        ancho_m=ancho_m,
+        alto_m=alto_m,
+        diametro_m=diametro,
+        area_m2=area,
+        velocidad_ms=q / area,
+        # Huebscher: el diámetro equivalente da la misma fricción con el mismo caudal.
+        friccion_pa_m=perdida_por_friccion(q, diametro),
+    )
+
+
+def tamano_recomendado(v: VerificacionDucto, tipo: str = "principal") -> dict | None:
+    """Tamaño comercial mínimo si la velocidad supera el máximo recomendado.
+
+    En ductos rectangulares conserva el alto (normalmente limitado por el
+    cielo raso) y agranda el ancho. Devuelve None si el ducto es adecuado.
+    """
+    _, maximo = VELOCIDADES_RECOMENDADAS[tipo]
+    if round(v.velocidad_ms, 3) <= maximo:
+        return None
+    area_minima = v.caudal_m3h / 3600 / maximo
+    if v.forma == "rectangular":
+        alto_mm = redondear_comercial(v.alto_m)
+        ancho_mm = redondear_comercial(area_minima / (alto_mm / 1000))
+        area = ancho_mm * alto_mm / 1e6
+        return {
+            "forma": "rectangular",
+            "ancho_m": ancho_mm / 1000,
+            "alto_m": alto_mm / 1000,
+            "velocidad_ms": v.caudal_m3h / 3600 / area,
+        }
+    diametro_mm = redondear_comercial(math.sqrt(4 * area_minima / math.pi))
+    area = math.pi * (diametro_mm / 1000) ** 2 / 4
+    return {
+        "forma": "circular",
+        "diametro_m": diametro_mm / 1000,
+        "velocidad_ms": v.caudal_m3h / 3600 / area,
+    }
+
+
+# --------------------------------------------------------------------------
+# Avisos e informes
+# --------------------------------------------------------------------------
+
+
+def advertencias(resultado: ResultadoDucto | VerificacionDucto, tipo: str = "principal") -> list[str]:
     """Avisos si la velocidad sale del rango recomendado para el tipo de tramo."""
     minimo, maximo = VELOCIDADES_RECOMENDADAS[tipo]
     avisos = []
     velocidad = round(resultado.velocidad_ms, 3)  # evita avisos por redondeo
     if velocidad > maximo:
+        exceso = "muy por encima del" if velocidad > 1.5 * maximo else "mayor que el"
         avisos.append(
-            f"Velocidad {resultado.velocidad_ms:.1f} m/s mayor que la recomendada "
-            f"({maximo} m/s) para tramo {tipo}: posible ruido."
+            f"Velocidad {velocidad:.1f} m/s {exceso} máximo recomendado ({maximo:g} m/s) "
+            f"para tramo {tipo}: ducto demasiado pequeño, generará ruido en "
+            "difusores y rejillas."
         )
     elif velocidad < minimo:
         avisos.append(
-            f"Velocidad {resultado.velocidad_ms:.1f} m/s menor que la recomendada "
-            f"({minimo} m/s) para tramo {tipo}: ducto sobredimensionado."
+            f"Velocidad {velocidad:.1f} m/s menor que la recomendada "
+            f"({minimo:g} m/s) para tramo {tipo}: ducto sobredimensionado."
         )
-    if resultado.friccion_pa_m > 2.0:
-        avisos.append("Pérdida por fricción alta (> 2 Pa/m): revise el ventilador.")
+    if resultado.friccion_pa_m > FRICCION_MAXIMA_PA_M:
+        avisos.append(
+            f"Pérdida por fricción alta ({resultado.friccion_pa_m:.1f} Pa/m > "
+            f"{FRICCION_MAXIMA_PA_M:g} Pa/m): el ventilador necesitará más presión."
+        )
     return avisos
 
 
-def informe(r: ResultadoDucto, tipo: str = "principal") -> str:
+def _caudal_txt(caudal_m3h: float) -> str:
+    return f"{caudal_m3h:,.0f} m³/h ({caudal_m3h / CFM_A_M3H:,.0f} CFM)"
+
+
+def informe(r: ResultadoDucto, tipo: str = "principal", unidad: str = "cm") -> str:
     ancho_c, alto_c = r.rectangular_comercial_mm
+    m = lambda x: formatear_medida(x, unidad)  # noqa: E731
     lineas = [
-        f"Caudal               {r.caudal_m3h:,.0f} m³/h ({r.caudal_m3h / CFM_A_M3H:,.0f} CFM)",
-        f"Diámetro calculado   {r.diametro_m * 1000:.0f} mm  -> comercial {r.diametro_comercial_mm} mm",
-        f"Rectangular          {r.ancho_m * 1000:.0f} x {r.alto_m * 1000:.0f} mm"
-        f"  -> comercial {ancho_c} x {alto_c} mm",
+        f"Caudal               {_caudal_txt(r.caudal_m3h)}",
+        f"Diámetro calculado   {m(r.diametro_m)} {unidad}"
+        f"  -> comercial {m(r.diametro_comercial_mm / 1000)} {unidad}",
+        f"Rectangular          {m(r.ancho_m)} x {m(r.alto_m)} {unidad}"
+        f"  -> comercial {m(ancho_c / 1000)} x {m(alto_c / 1000)} {unidad}",
         f"Velocidad            {r.velocidad_ms:.2f} m/s",
         f"Pérdida por fricción {r.friccion_pa_m:.3f} Pa/m",
     ]
@@ -206,29 +333,73 @@ def informe(r: ResultadoDucto, tipo: str = "principal") -> str:
     return "\n".join(lineas)
 
 
+def informe_verificacion(v: VerificacionDucto, tipo: str = "principal", unidad: str = "cm") -> str:
+    m = lambda x: formatear_medida(x, unidad)  # noqa: E731
+    if v.forma == "rectangular":
+        medida = f"{m(v.ancho_m)} x {m(v.alto_m)} {unidad} (Ø equivalente {m(v.diametro_m)} {unidad})"
+    else:
+        medida = f"Ø {m(v.diametro_m)} {unidad}"
+    minimo, maximo = VELOCIDADES_RECOMENDADAS[tipo]
+    lineas = [
+        f"Caudal               {_caudal_txt(v.caudal_m3h)}",
+        f"Ducto                {medida}",
+        f"Área libre           {v.area_m2:.4f} m²",
+        f"Velocidad del aire   {v.velocidad_ms:.2f} m/s  (recomendado {minimo:g}-{maximo:g} m/s, tramo {tipo})",
+        f"Pérdida por fricción {v.friccion_pa_m:.3f} Pa/m",
+    ]
+    avisos = advertencias(v, tipo)
+    lineas += [f"AVISO: {a}" for a in avisos] or ["Resultado: ducto adecuado para este caudal."]
+    sugerido = tamano_recomendado(v, tipo)
+    if sugerido:
+        if sugerido["forma"] == "rectangular":
+            texto = f"{m(sugerido['ancho_m'])} x {m(sugerido['alto_m'])} {unidad}"
+        else:
+            texto = f"Ø {m(sugerido['diametro_m'])} {unidad}"
+        lineas.append(
+            f"Tamaño mínimo recomendado: {texto} -> {sugerido['velocidad_ms']:.1f} m/s"
+        )
+    return "\n".join(lineas)
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Dimensionamiento de ductos de aire")
+    parser = argparse.ArgumentParser(description="Dimensionamiento y verificación de ductos de aire")
     parser.add_argument("--caudal", type=float, required=True)
-    parser.add_argument("--unidad", choices=("m3/h", "CFM"), default="m3/h")
-    metodo = parser.add_mutually_exclusive_group(required=True)
-    metodo.add_argument("--velocidad", type=float, help="velocidad del aire en m/s")
-    metodo.add_argument("--friccion", type=float, help="pérdida por fricción en Pa/m")
+    parser.add_argument("--unidad", choices=("m3/h", "CFM"), default="m3/h", help="unidad del caudal")
+    parser.add_argument(
+        "--unidad-medida", choices=tuple(UNIDADES_MEDIDA), default="cm",
+        help="unidad de las medidas del ducto (entrada y salida)",
+    )
+    modo = parser.add_mutually_exclusive_group(required=True)
+    modo.add_argument("--velocidad", type=float, help="dimensionar: velocidad del aire en m/s")
+    modo.add_argument("--friccion", type=float, help="dimensionar: pérdida por fricción en Pa/m")
+    modo.add_argument("--medida", type=float, nargs=2, metavar=("ANCHO", "ALTO"),
+                      help="verificar un ducto rectangular existente")
+    modo.add_argument("--diametro", type=float, help="verificar un ducto circular existente")
     forma = parser.add_mutually_exclusive_group()
     forma.add_argument("--relacion", type=float, default=1.5, help="relación ancho/alto")
-    forma.add_argument("--alto", type=float, help="alto fijo del ducto rectangular en mm")
+    forma.add_argument("--alto", type=float, help="alto fijo del ducto rectangular")
     parser.add_argument("--tipo", choices=VELOCIDADES_RECOMENDADAS, default="principal")
     args = parser.parse_args(argv)
 
     caudal = args.caudal * CFM_A_M3H if args.unidad == "CFM" else args.caudal
+    unidad = args.unidad_medida
     try:
-        resultado = dimensionar(
-            caudal,
-            velocidad=args.velocidad,
-            friccion=args.friccion,
-            relacion=args.relacion,
-            alto_m=args.alto / 1000 if args.alto else None,
-        )
-        print(informe(resultado, args.tipo))
+        if args.medida or args.diametro:
+            if args.medida:
+                ancho, alto = (a_metros(x, unidad) for x in args.medida)
+                v = verificar(caudal, ancho_m=ancho, alto_m=alto)
+            else:
+                v = verificar(caudal, diametro_m=a_metros(args.diametro, unidad))
+            print(informe_verificacion(v, args.tipo, unidad))
+        else:
+            resultado = dimensionar(
+                caudal,
+                velocidad=args.velocidad,
+                friccion=args.friccion,
+                relacion=args.relacion,
+                alto_m=a_metros(args.alto, unidad) if args.alto else None,
+            )
+            print(informe(resultado, args.tipo, unidad))
     except ValueError as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1

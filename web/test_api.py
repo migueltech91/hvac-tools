@@ -32,11 +32,25 @@ class TestApiWeb(unittest.TestCase):
         tbh = llamar("psicrometria", tbs=25, modo="tbh", valor=hr["tbh_c"])["datos"]
         self.assertAlmostEqual(tbh["hr_pct"], 50, places=2)
 
-    def test_ductos(self):
+    def test_ductos_dimensionar(self):
         r = llamar("ductos", caudal=1000, metodo="velocidad", valor=5)["datos"]
-        self.assertEqual(r["diametro_comercial_mm"], 300)
+        self.assertAlmostEqual(r["diametro_comercial"], 30)  # cm por defecto
+        mm = llamar("ductos", caudal=1000, metodo="velocidad", valor=5, unidad_medida="mm")
+        self.assertAlmostEqual(mm["datos"]["diametro_comercial"], 300)
+        alto = llamar("ductos", caudal=1000, metodo="velocidad", valor=5, alto_fijo=15)
+        self.assertEqual(alto["datos"]["rectangular_comercial"], [45, 15])
         cfm = llamar("ductos", caudal=600, unidad="CFM", metodo="friccion", valor=0.8, relacion=2)
         self.assertAlmostEqual(cfm["datos"]["friccion_pa_m"], 0.8, places=3)
+
+    def test_ductos_verificar(self):
+        r = llamar("ductos", modo="verificar", caudal=3000, ancho=20, alto=30)["datos"]
+        self.assertAlmostEqual(r["velocidad_ms"], 13.89, places=2)
+        self.assertTrue(any("ruido" in a for a in r["avisos"]))
+        self.assertAlmostEqual(r["sugerido"]["ancho"], 35)
+        self.assertAlmostEqual(r["sugerido"]["alto"], 30)
+        ok = llamar("ductos", modo="verificar", forma="circular", caudal=500,
+                    diametro=25, tipo="ramal")["datos"]
+        self.assertIsNone(ok["sugerido"])
 
     def test_consumo_y_comparar(self):
         c = llamar("consumo", capacidad=12000, eficiencia=13, horas=8, tarifa=0.15)["datos"]

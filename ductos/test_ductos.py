@@ -2,14 +2,19 @@ import math
 import unittest
 
 from ductos.ductos import (
+    a_metros,
     advertencias,
     diametro_equivalente,
     dimensionar,
     factor_friccion,
+    formatear_medida,
+    informe_verificacion,
     perdida_por_friccion,
     rectangular_por_alto,
     rectangular_por_relacion,
     redondear_comercial,
+    tamano_recomendado,
+    verificar,
 )
 
 
@@ -72,6 +77,53 @@ class TestDuctos(unittest.TestCase):
             dimensionar(-5, velocidad=5)
         with self.assertRaises(ValueError):
             rectangular_por_relacion(0.3, 0.5)
+
+    def test_verificar_ducto_pequeno_3000_m3h_20x30cm(self):
+        # Caso de revisión técnica: 3000 m³/h en un ducto de 20 x 30 cm.
+        v = verificar(3000, ancho_m=a_metros(20, "cm"), alto_m=a_metros(30, "cm"))
+        self.assertAlmostEqual(v.area_m2, 0.06)
+        self.assertAlmostEqual(v.velocidad_ms, 13.89, places=2)
+        self.assertAlmostEqual(v.diametro_m, 0.2664, places=4)
+        avisos = advertencias(v, "principal")
+        self.assertTrue(any("ruido en difusores y rejillas" in a for a in avisos))
+        self.assertTrue(any("fricción alta" in a for a in avisos))
+        sugerido = tamano_recomendado(v, "principal")
+        # Conserva el alto de 30 cm y agranda el ancho a 35 cm (7,9 m/s <= 8 m/s).
+        self.assertEqual((sugerido["ancho_m"], sugerido["alto_m"]), (0.35, 0.30))
+        self.assertLessEqual(sugerido["velocidad_ms"], 8.0)
+
+    def test_verificar_ducto_adecuado(self):
+        # 1000 m³/h en 30 x 20 cm: 4,6 m/s, dentro del rango de un ramal (3-5 m/s).
+        v = verificar(1000, ancho_m=0.30, alto_m=0.20)
+        self.assertAlmostEqual(v.velocidad_ms, 1000 / 3600 / 0.06)
+        self.assertEqual(advertencias(v, "ramal"), [])
+        self.assertIsNone(tamano_recomendado(v, "ramal"))
+        self.assertIn("ducto adecuado", informe_verificacion(v, "ramal"))
+
+    def test_verificar_circular(self):
+        v = verificar(800, diametro_m=0.20)
+        self.assertEqual(v.forma, "circular")
+        self.assertAlmostEqual(v.velocidad_ms, 800 / 3600 / (math.pi * 0.01), places=6)
+        sugerido = tamano_recomendado(v, "ramal")
+        self.assertEqual(sugerido["forma"], "circular")
+        self.assertLessEqual(sugerido["velocidad_ms"], 5.0)
+
+    def test_verificar_validaciones(self):
+        with self.assertRaises(ValueError):
+            verificar(1000)
+        with self.assertRaises(ValueError):
+            verificar(1000, ancho_m=0.3)
+        with self.assertRaises(ValueError):
+            verificar(1000, ancho_m=0.3, alto_m=0.2, diametro_m=0.25)
+        with self.assertRaises(ValueError):
+            a_metros(10, "pulgadas")
+
+    def test_medidas_en_cm_y_mm(self):
+        self.assertAlmostEqual(a_metros(20, "cm"), 0.20)
+        self.assertAlmostEqual(a_metros(200, "mm"), 0.20)
+        self.assertEqual(formatear_medida(0.266, "cm"), "26.6")
+        self.assertEqual(formatear_medida(0.30, "cm"), "30")
+        self.assertEqual(formatear_medida(0.266, "mm"), "266")
 
     def test_area_coherente(self):
         r = dimensionar(3600, velocidad=4)

@@ -20,7 +20,16 @@ from conversor_unidades.conversor_unidades import (
     normalizar_unidad,
     tabla_equivalencias,
 )
-from ductos.ductos import CFM_A_M3H, advertencias, dimensionar
+from ductos.ductos import (
+    CFM_A_M3H,
+    UNIDADES_MEDIDA,
+    VELOCIDADES_RECOMENDADAS,
+    a_metros,
+    advertencias,
+    dimensionar,
+    tamano_recomendado,
+    verificar,
+)
 from psicrometria.psicrometria import (
     estado_desde_bulbo_humedo,
     estado_desde_hr,
@@ -82,29 +91,74 @@ def psicrometria(**p) -> dict:
 
 
 def ductos(**p) -> dict:
+    """Dimensiona (modo "dimensionar") o verifica (modo "verificar") un ducto.
+
+    Las medidas de entrada y salida están en ``unidad_medida`` (cm o mm).
+    """
     caudal = float(p["caudal"])
     if p.get("unidad", "m3/h") == "CFM":
         caudal *= CFM_A_M3H
+    unidad = p.get("unidad_medida", "cm")
+    tipo = p.get("tipo", "principal")
+    en_unidad = lambda m: m / UNIDADES_MEDIDA[unidad]  # noqa: E731
+    base = {
+        "unidad_medida": unidad,
+        "caudal_m3h": caudal,
+        "caudal_cfm": caudal / CFM_A_M3H,
+        "rango_velocidad": list(VELOCIDADES_RECOMENDADAS[tipo]),
+    }
+
+    if p.get("modo", "dimensionar") == "verificar":
+        if p.get("forma", "rectangular") == "rectangular":
+            v = verificar(
+                caudal,
+                ancho_m=a_metros(float(p["ancho"]), unidad),
+                alto_m=a_metros(float(p["alto"]), unidad),
+            )
+        else:
+            v = verificar(caudal, diametro_m=a_metros(float(p["diametro"]), unidad))
+        sugerido = tamano_recomendado(v, tipo)
+        if sugerido:
+            # "ancho_m" -> "ancho" (en la unidad elegida), etc.
+            sugerido = {
+                (k[:-2] if k.endswith("_m") else k): (en_unidad(x) if k.endswith("_m") else x)
+                for k, x in sugerido.items()
+            }
+        return {
+            **base,
+            "modo": "verificar",
+            "forma": v.forma,
+            "ancho": en_unidad(v.ancho_m) if v.ancho_m else None,
+            "alto": en_unidad(v.alto_m) if v.alto_m else None,
+            "diametro": en_unidad(v.diametro_m),
+            "area_m2": v.area_m2,
+            "velocidad_ms": v.velocidad_ms,
+            "friccion_pa_m": v.friccion_pa_m,
+            "avisos": advertencias(v, tipo),
+            "sugerido": sugerido,
+        }
+
     valor = float(p["valor"])
-    alto_mm = p.get("alto_mm")
+    alto_fijo = p.get("alto_fijo")
     r = dimensionar(
         caudal,
         velocidad=valor if p.get("metodo", "velocidad") == "velocidad" else None,
         friccion=valor if p.get("metodo") == "friccion" else None,
         relacion=float(p.get("relacion", 1.5) or 1.5),
-        alto_m=float(alto_mm) / 1000 if alto_mm else None,
+        alto_m=a_metros(float(alto_fijo), unidad) if alto_fijo else None,
     )
+    ancho_c, alto_c = r.rectangular_comercial_mm
     return {
-        "caudal_m3h": r.caudal_m3h,
-        "caudal_cfm": r.caudal_m3h / CFM_A_M3H,
-        "diametro_mm": r.diametro_m * 1000,
-        "diametro_comercial_mm": r.diametro_comercial_mm,
-        "ancho_mm": r.ancho_m * 1000,
-        "alto_mm": r.alto_m * 1000,
-        "rectangular_comercial_mm": list(r.rectangular_comercial_mm),
+        **base,
+        "modo": "dimensionar",
+        "diametro": en_unidad(r.diametro_m),
+        "diametro_comercial": en_unidad(r.diametro_comercial_mm / 1000),
+        "ancho": en_unidad(r.ancho_m),
+        "alto": en_unidad(r.alto_m),
+        "rectangular_comercial": [en_unidad(ancho_c / 1000), en_unidad(alto_c / 1000)],
         "velocidad_ms": r.velocidad_ms,
         "friccion_pa_m": r.friccion_pa_m,
-        "avisos": advertencias(r, p.get("tipo", "principal")),
+        "avisos": advertencias(r, tipo),
     }
 
 

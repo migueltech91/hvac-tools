@@ -115,6 +115,10 @@
     <section id="panel-ductos" class="panel" role="tabpanel" hidden>
       <form class="formulario" data-herramienta="ductos">
         <h2>Datos del tramo</h2>
+        <div class="selector-modo" role="radiogroup" aria-label="Modo">
+          <label><input type="radio" name="modo" value="dimensionar" checked> Dimensionar ducto nuevo</label>
+          <label><input type="radio" name="modo" value="verificar"> Verificar ducto existente</label>
+        </div>
         <div class="fila">
           <label>Caudal<input name="caudal" type="number" min="1" step="10" value="1000" required></label>
           <label>Unidad
@@ -124,19 +128,45 @@
             </select>
           </label>
         </div>
-        <div class="fila">
-          <label>Método
-            <select name="metodo">
-              <option value="velocidad" selected>Velocidad (m/s)</option>
-              <option value="friccion">Fricción (Pa/m)</option>
+        <label>Medidas del ducto en
+          <select name="unidad_medida">
+            <option value="cm" selected>Centímetros (cm)</option>
+            <option value="mm">Milímetros (mm)</option>
+          </select>
+        </label>
+
+        <div data-solo-modo="dimensionar">
+          <div class="fila">
+            <label>Método
+              <select name="metodo">
+                <option value="velocidad" selected>Velocidad (m/s)</option>
+                <option value="friccion">Fricción (Pa/m)</option>
+              </select>
+            </label>
+            <label>Valor<input name="valor" type="number" min="0.1" step="0.1" value="5"></label>
+          </div>
+          <div class="fila">
+            <label>Relación ancho/alto<input name="relacion" type="number" min="1" step="0.5" value="1.5"></label>
+            <label><span>Alto fijo (<span class="u-medida">cm</span>, opcional)</span><input name="alto_fijo" type="number" min="1" step="any" placeholder="—"></label>
+          </div>
+        </div>
+
+        <div data-solo-modo="verificar" hidden>
+          <label>Forma
+            <select name="forma">
+              <option value="rectangular" selected>Rectangular</option>
+              <option value="circular">Circular</option>
             </select>
           </label>
-          <label>Valor<input name="valor" type="number" min="0.1" step="0.1" value="5" required></label>
+          <div class="fila" data-solo-forma="rectangular">
+            <label><span>Ancho (<span class="u-medida">cm</span>)</span><input name="ancho" type="number" min="1" step="any" value="20"></label>
+            <label><span>Alto (<span class="u-medida">cm</span>)</span><input name="alto" type="number" min="1" step="any" value="30"></label>
+          </div>
+          <div data-solo-forma="circular" hidden>
+            <label><span>Diámetro (<span class="u-medida">cm</span>)</span><input name="diametro" type="number" min="1" step="any" value="25"></label>
+          </div>
         </div>
-        <div class="fila">
-          <label>Relación ancho/alto<input name="relacion" type="number" min="1" step="0.5" value="1.5"></label>
-          <label>Alto fijo (mm, opcional)<input name="alto_mm" type="number" min="50" step="10" placeholder="—"></label>
-        </div>
+
         <label>Tipo de tramo
           <select name="tipo">
             <option value="residencial">Residencial</option>

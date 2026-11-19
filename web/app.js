@@ -37,6 +37,11 @@ function datosFormulario(form) {
   const datos = {};
   for (const el of form.elements) {
     if (!el.name || el.value === "") continue;
+    if ((el.type === "radio" || el.type === "checkbox") && !el.checked) continue;
+    // Campos de otro modo / forma (ocultos dentro del formulario). La pestaña
+    // entera puede estar oculta y sus campos deben enviarse igual.
+    const oculto = el.closest("[hidden]");
+    if (oculto && form.contains(oculto)) continue;
     datos[el.name] = el.value;
   }
   return datos;
@@ -119,24 +124,69 @@ const render = {
 
   ductos(form) {
     const d = llamar("ductos", datosFormulario(form));
-    const [ancho, alto] = d.rectangular_comercial_mm;
-    const avisos = d.avisos.length
+    const u = d.unidad_medida;
+    const dec = u === "mm" ? 0 : 1;
+    // Redondea antes de decidir decimales: 0,35 m / 0,01 da 34,999… en coma flotante.
+    const med = (x) => {
+      const r = Math.round(x * 10) / 10;
+      return fmt(r, Number.isInteger(r) ? 0 : dec);
+    };
+    const [vMin, vMax] = d.rango_velocidad;
+    const lista = d.avisos.length
       ? `<ul class="avisos">${d.avisos.map((a) => `<li>${escapar(a)}</li>`).join("")}</ul>`
-      : `<p class="mensaje-ok">Velocidad dentro del rango recomendado.</p>`;
+      : "";
+    const caudal = `<tr><td>Caudal</td><td class="num">${fmt(d.caudal_m3h)} m³/h · ${fmt(d.caudal_cfm)} CFM</td></tr>`;
+
+    if (d.modo === "verificar") {
+      const velAlta = Math.round(d.velocidad_ms * 1000) / 1000 > vMax;
+      const velBaja = Math.round(d.velocidad_ms * 1000) / 1000 < vMin;
+      const estadoVel = velAlta ? " peligro" : velBaja ? "" : " correcto";
+      const medida = d.forma === "rectangular"
+        ? `${med(d.ancho)} × ${med(d.alto)} ${u}`
+        : `Ø ${med(d.diametro)} ${u}`;
+      let sugerencia = "";
+      if (d.sugerido) {
+        const s = d.sugerido;
+        const texto = s.forma === "rectangular" ? `${med(s.ancho)} × ${med(s.alto)}` : `Ø ${med(s.diametro)}`;
+        sugerencia = kpi("Tamaño mínimo recomendado", texto, ` ${u} · ${fmt(s.velocidad_ms, 1)} m/s`, true);
+      }
+      const veredicto = velAlta || velBaja
+        ? ""
+        : `<p class="mensaje-ok">Ducto adecuado: velocidad dentro del rango recomendado.</p>`;
+      return `
+        <h2>Verificación del ducto ${escapar(medida)}</h2>
+        <div class="kpis">
+          <div class="kpi${estadoVel}">
+            <div class="titulo">Velocidad del aire</div>
+            <div class="valor">${fmt(d.velocidad_ms, 1)}<span class="unidad"> m/s</span></div>
+            <div class="titulo">Recomendado ${fmt(vMin, 1)}–${fmt(vMax, 1)} m/s</div>
+          </div>
+          ${kpi("Fricción", fmt(d.friccion_pa_m, 2), " Pa/m")}
+          ${sugerencia}
+        </div>
+        <table class="tabla"><tbody>
+          ${caudal}
+          <tr><td>Área libre</td><td class="num">${fmt(d.area_m2, 4)} m²</td></tr>
+          ${d.forma === "rectangular" ? `<tr><td>Diámetro equivalente</td><td class="num">${med(d.diametro)} ${u}</td></tr>` : ""}
+        </tbody></table>
+        ${lista}${veredicto}`;
+    }
+
+    const [ancho, alto] = d.rectangular_comercial;
     return `
       <h2>Resultado</h2>
       <div class="kpis">
-        ${kpi("Ducto circular", "Ø " + d.diametro_comercial_mm, " mm", true)}
-        ${kpi("Ducto rectangular", `${ancho} × ${alto}`, " mm", true)}
+        ${kpi("Ducto circular", "Ø " + med(d.diametro_comercial), " " + u, true)}
+        ${kpi("Ducto rectangular", `${med(ancho)} × ${med(alto)}`, " " + u, true)}
         ${kpi("Velocidad", fmt(d.velocidad_ms, 2), " m/s")}
         ${kpi("Fricción", fmt(d.friccion_pa_m, 3), " Pa/m")}
       </div>
       <table class="tabla"><tbody>
-        <tr><td>Caudal</td><td class="num">${fmt(d.caudal_m3h)} m³/h · ${fmt(d.caudal_cfm)} CFM</td></tr>
-        <tr><td>Diámetro calculado</td><td class="num">${fmt(d.diametro_mm)} mm</td></tr>
-        <tr><td>Rectangular calculado</td><td class="num">${fmt(d.ancho_mm)} × ${fmt(d.alto_mm)} mm</td></tr>
+        ${caudal}
+        <tr><td>Diámetro calculado</td><td class="num">${fmt(d.diametro, dec)} ${u}</td></tr>
+        <tr><td>Rectangular calculado</td><td class="num">${fmt(d.ancho, dec)} × ${fmt(d.alto, dec)} ${u}</td></tr>
       </tbody></table>
-      ${avisos}`;
+      ${lista || `<p class="mensaje-ok">Velocidad dentro del rango recomendado.</p>`}`;
   },
 
   comparar(form) {
@@ -230,7 +280,33 @@ function prepararPestanas() {
   abrirDesdeHash();
 }
 
+// Ductos: muestra los campos del modo / forma elegidos y convierte cm <-> mm.
+function prepararDuctos() {
+  const form = document.querySelector('[data-herramienta="ductos"]');
+  const medidas = ["alto_fijo", "ancho", "alto", "diametro"];
+  let unidadAnterior = form.elements.unidad_medida.value;
+  const sincronizar = () => {
+    const modo = form.querySelector('input[name="modo"]:checked').value;
+    const forma = form.elements.forma.value;
+    form.querySelectorAll("[data-solo-modo]").forEach((el) => { el.hidden = el.dataset.soloModo !== modo; });
+    form.querySelectorAll("[data-solo-forma]").forEach((el) => { el.hidden = el.dataset.soloForma !== forma; });
+    const unidad = form.elements.unidad_medida.value;
+    if (unidad !== unidadAnterior) {
+      const factor = unidad === "mm" ? 10 : 0.1;
+      medidas.forEach((n) => {
+        const el = form.elements[n];
+        if (el.value !== "") el.value = +(Number(el.value) * factor).toFixed(1);
+      });
+      unidadAnterior = unidad;
+    }
+    form.querySelectorAll(".u-medida").forEach((s) => { s.textContent = unidad; });
+  };
+  form.addEventListener("change", sincronizar);
+  sincronizar();
+}
+
 function prepararFormularios() {
+  prepararDuctos();
   document.querySelectorAll("form.formulario").forEach((form) => {
     let espera;
     const programar = () => { clearTimeout(espera); espera = setTimeout(() => actualizar(form), 150); };

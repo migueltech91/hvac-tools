@@ -25,7 +25,7 @@ ejecuta este mismo código Python con [Pyodide](https://pyodide.org)
 | [Carga térmica](carga_termica/) | Cuántos BTU/h necesita un ambiente y qué equipo comprar | Dormitorio de 12 m² → split de 9 000 BTU/h |
 | [Conversor de unidades](conversor_unidades/) | BTU/h ↔ kW ↔ TR, CFM ↔ m³/h, Pa ↔ inH₂O, °C ↔ °F… | 12 000 BTU/h = 1 TR = 3,52 kW |
 | [Psicrometría](psicrometria/) | Propiedades del aire húmedo: rocío, bulbo húmedo, entalpía | 25 °C y 50 % HR → rocío 13,9 °C |
-| [Dimensionamiento de ductos](ductos/) | Tamaño de ducto circular y rectangular por velocidad o fricción | 1 000 m³/h a 5 m/s → Ø 266 mm |
+| [Ductos](ductos/) | Dimensiona ductos nuevos y verifica existentes (medidas en cm o mm): velocidad, fricción y riesgo de ruido | 3 000 m³/h en 20 × 30 cm → 13,9 m/s, ruidoso: usar 35 × 30 cm |
 | [Consumo energético](consumo_energetico/) | kWh y costo mensual de un equipo; ahorro y retorno al cambiarlo | SEER 13 vs SEER 22 → retorno en años |
 
 Cada carpeta tiene su propio README con la explicación del método, ejemplos de
@@ -36,7 +36,7 @@ uso y salida real del programa.
 - **Sin dependencias externas**: solo la biblioteca estándar de Python.
 - **Fórmulas de referencia**: ASHRAE Fundamentals (psicrometría, fricción en
   ductos, diámetro equivalente de Huebscher) y factores prácticos del rubro.
-- **Probado**: 50 tests automáticos que corren en cada cambio
+- **Probado**: 56 tests automáticos que corren en cada cambio
   (GitHub Actions, Windows y Linux).
 - **Demo web**: interfaz en HTML/CSS/JS que llama al mismo código Python
   desde el navegador ([`web/`](web/), publicada con GitHub Pages).
@@ -63,6 +63,9 @@ python psicrometria/psicrometria.py --tbs 30 --hr 60 --altitud 1500
 
 # Ducto para 1 200 CFM con pérdida de 1 Pa/m
 python ductos/ductos.py --caudal 1200 --unidad CFM --friccion 1
+
+# ¿Sirve un ducto de 20 x 30 cm para 3 000 m³/h?
+python ductos/ductos.py --caudal 3000 --medida 20 30
 
 # Costo mensual de un split de 12 000 BTU/h SEER 16, 8 h al día
 python consumo_energetico/consumo_energetico.py calcular --capacidad 12000 --eficiencia 16 --horas 8 --tarifa 0.15
@@ -100,6 +103,18 @@ hvac-tools/
 ├── index.html            # Página de la demo (GitHub Pages)
 └── .github/workflows/    # Integración continua (tests automáticos)
 ```
+
+## Cómo trabajo
+
+Desarrollo con apoyo de herramientas de inteligencia artificial para programar
+más rápido. Yo me encargo de lo que la IA no puede hacer: definir los métodos
+de cálculo, validar los resultados con mi experiencia en el rubro HVAC y
+corregir los errores técnicos antes de entregar.
+
+En este repositorio, por ejemplo, la verificación de ductos existentes
+(detectar que un ducto de 20 × 30 cm es demasiado pequeño para 3 000 m³/h y
+generará ruido en difusores y rejillas) surgió de mi revisión técnica del
+producto.
 
 ## Aviso
 
