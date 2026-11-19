@@ -8,6 +8,12 @@ Colección de **programas de cálculo para HVAC** (calefacción, ventilación y 
 acondicionado) desarrollados en Python. Es mi portafolio para mostrar cómo
 convierto fórmulas de ingeniería en software claro, probado y fácil de usar.
 
+### ▶ [Probar la demo en vivo](https://migueltech91.github.io/hvac-tools/)
+
+Las cinco calculadoras funcionan en el navegador, sin instalar nada: la página
+ejecuta este mismo código Python con [Pyodide](https://pyodide.org)
+(Python compilado a WebAssembly).
+
 > ¿Necesitas una calculadora, un script de automatización o una herramienta a
 > medida para tu empresa de climatización, refrigeración o mantenimiento?
 > Escríbeme por **Workana** y lo adaptamos a tu flujo de trabajo.
@@ -30,8 +36,10 @@ uso y salida real del programa.
 - **Sin dependencias externas**: solo la biblioteca estándar de Python.
 - **Fórmulas de referencia**: ASHRAE Fundamentals (psicrometría, fricción en
   ductos, diámetro equivalente de Huebscher) y factores prácticos del rubro.
-- **Probado**: más de 40 tests automáticos que corren en cada cambio
+- **Probado**: 50 tests automáticos que corren en cada cambio
   (GitHub Actions, Windows y Linux).
+- **Demo web**: interfaz en HTML/CSS/JS que llama al mismo código Python
+  desde el navegador ([`web/`](web/), publicada con GitHub Pages).
 - **Doble uso**: cada programa funciona desde la terminal y también como
   módulo importable para integrarlo en otros sistemas (web, Excel, APIs).
 - **Validación de datos**: mensajes de error claros ante valores imposibles.
@@ -88,6 +96,8 @@ hvac-tools/
 ├── psicrometria/         # Propiedades del aire húmedo
 ├── ductos/               # Dimensionamiento de ductos
 ├── consumo_energetico/   # Consumo, costo y retorno de inversión
+├── web/                  # Demo web (Pyodide) + capa de integración api.py
+├── index.html            # Página de la demo (GitHub Pages)
 └── .github/workflows/    # Integración continua (tests automáticos)
 ```
 
