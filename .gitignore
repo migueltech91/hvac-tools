@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Editores / IDE
+.vs/
+.vscode/
+.idea/
+*.pyproj.user
+
+# Sistema
+Thumbs.db
+.DS_Store
+desktop.ini
